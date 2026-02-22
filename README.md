@@ -1,2 +1,2 @@
-| ![TechDahTurtle's GitHub Stats](./profile/stats.svg) | ![Top Langs](./profile/top-langs.svg) |
+| ![Stats](./profile/stats.svg) | ![Top Langs](./profile/top-langs.svg) |
 |:--:|:--:|
