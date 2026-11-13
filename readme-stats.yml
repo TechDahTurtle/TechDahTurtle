@@ -1,39 +1,120 @@
-name: Update README cards
+name: Project stats
 
 on:
   schedule:
-    - cron: "0 0 * * *" # daily
+    - cron: '23 11 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+concurrency:
+  group: profile-project-stats
+
 jobs:
-  build:
+  update:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - name: Generate stats card
-        uses: readme-tools/github-readme-stats-action@v1
-        with:
-          card: stats
-          options: username=TechDahTurtle&show_icons=true&theme=tokyonight&rank_icon=percentile
-          path: profile/stats.svg
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Generate top languages card
-        uses: readme-tools/github-readme-stats-action@v1
-        with:
-          card: top-langs
-          options: username=TechDahTurtle&theme=tokyonight&langs_count=8
-          path: profile/top-langs.svg
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Commit cards
+      - name: Gather stats and update README
+        env:
+          GH_TOKEN: ${{ secrets.STATS_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add profile/*.svg
-          git commit -m "Update README cards" || exit 0
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from collections import Counter
+          from pathlib import Path
+
+          def api(endpoint, *options):
+              output = subprocess.check_output(
+                  ["gh", "api", endpoint, *options], text=True
+              )
+              return json.loads(output)
+
+          owner = os.environ["OWNER"]
+          pages = api(
+              f"users/{owner}/repos?type=owner&per_page=100",
+              "--paginate", "--slurp",
+          )
+          repos = [
+              repo for page in pages for repo in page
+              if not repo["private"] and not repo["fork"]
+              and repo["name"].lower() != owner.lower()
+          ]
+
+          language_bytes = Counter()
+          language_projects = Counter()
+          views = clones = viewed_projects = cloned_projects = 0
+          forks = forked_projects = 0
+
+          for repo in repos:
+              path = f"repos/{repo['full_name']}"
+              languages = api(f"{path}/languages")
+              language_bytes.update(languages)
+              language_projects.update(languages.keys())
+
+              repo_views = api(f"{path}/traffic/views")["count"]
+              repo_clones = api(f"{path}/traffic/clones")["count"]
+              repo_forks = repo["forks_count"]
+
+              views += repo_views
+              clones += repo_clones
+              forks += repo_forks
+              viewed_projects += repo_views > 0
+              cloned_projects += repo_clones > 0
+              forked_projects += repo_forks > 0
+
+          lines = [
+              "## Project stats",
+              "",
+              f"**Last 14 days** · {viewed_projects} of {len(repos)} projects viewed"
+              f" ({views:,} views) · {cloned_projects} cloned ({clones:,} clones)",
+              "",
+              f"**Current forks** · {forked_projects} projects with forks ({forks:,} forks)",
+          ]
+
+          total_bytes = sum(language_bytes.values())
+          if total_bytes:
+              lines += [
+                  "",
+                  "| Language | Share of code | Projects using it |",
+                  "| --- | ---: | ---: |",
+              ]
+              for language, size in language_bytes.most_common():
+                  lines.append(
+                      f"| {language} | {size / total_bytes:.1%} | "
+                      f"{language_projects[language]} |"
+                  )
+
+          readme = Path("README.md")
+          text = readme.read_text(encoding="utf-8") if readme.exists() else ""
+          start = "<!-- project-stats:start -->"
+          end = "<!-- project-stats:end -->"
+          block = "\n".join([start, *lines, end])
+
+          if start in text and end in text:
+              before, _, remainder = text.partition(start)
+              _, _, after = remainder.partition(end)
+              updated = before + block + after
+          elif start in text or end in text:
+              raise SystemExit("README has an incomplete project stats marker pair")
+          else:
+              updated = (text.rstrip() + "\n\n" if text.strip() else "") + block + "\n"
+
+          readme.write_text(updated, encoding="utf-8")
+          PY
+
+      - name: Save changes
+        run: |
+          git add README.md
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "Update project stats"
           git push
