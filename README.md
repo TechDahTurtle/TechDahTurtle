@@ -4,7 +4,7 @@
 <!-- project-stats:start -->
 ## Project stats
 
-**Last 14 days** · 3 of 7 projects viewed (5 views) · 7 cloned (39 clones)
+**Last 14 days** · 3 of 7 projects viewed (5 views) · 7 cloned (32 clones)
 
 **Current forks** · 2 projects with forks (2 forks)
 
